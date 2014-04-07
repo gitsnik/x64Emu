@@ -1,8 +1,9 @@
-#!env python
+#!/usr/bin/env python
 
 import argparse
 import string
 import re
+import os
 
 regs = {
 	'rax': hex(0x00),
@@ -35,6 +36,9 @@ flags = {
 	'zf': hex(0x01),
 }
 
+version = 'ALPHA RELEASE v0.02'
+webpage = 'http://dracyrys.com/x64Emu'
+
 '''
 	Syscalls dictionary. Pretty simple - hex code as key,
 	array of two items - first is string for syscall name,
@@ -42,6 +46,10 @@ flags = {
 	or variable name (e.g. dup2 returns what is in rsi), but
 	socket() returns a sockfd, of which a single number (3)
 	is enough.
+
+	/usr/include/x86_64-linux-gnu/asm/unistd_64.h contains
+	the codes in decimal, so you will need to convert to
+	hex here.
 '''
 syscalls = {
 	'0x3b': ['execve()', '0x00'],
@@ -52,6 +60,8 @@ syscalls = {
 	'0x2b': ['accept()', '0x04'],
 	'0x0': ['read()', '0x0f'],
 	'0x3c': ['exit()', 'rax'],
+	'0x1': ['write()', '0x01'],
+	'0x2a': ['connect()', '0x00'],
 }
 
 stack = []
@@ -332,17 +342,19 @@ def command( line ):
 
 	Print the registers out. Will later print stack as well.
 '''
-def print_regs():
+def print_regs(verbosity = 0):
 	print("RAX: %-18s RBX: %-18s RCX: %-18s RDX: %-18s RSI: %-18s RDI: %-18s RSP: %-18s" % (regs['rax'], regs['rbx'], regs['rcx'], regs['rdx'], regs['rsi'], regs['rdi'], regs['rsp']) )
-	print("EAX: %-18s  AX: %-18s  AH: %-18s  AL: %-18s  ZF: %-18s" % (regs['eax'], regs['ax'], regs['ah'], regs['al'], flags['zf']))
+	if verbosity > 2:
+		print("EAX: %-18s  AX: %-18s  AH: %-18s  AL: %-18s  ZF: %-18s" % (regs['eax'], regs['ax'], regs['ah'], regs['al'], flags['zf']))
 
 '''
 	Main Processing Loop. Pretty much an open file, parse, and move on loop at this stage.
 '''
 def main():
-	parser = argparse.ArgumentParser(description='x86_64 Simple Shellcode Analysis Program [ALPHA RELEASE v0.01]')
+	desc = "x86_64 Simple Shellcode Analysis Program [%s]%s%s" % (version, os.linesep, webpage)
+	parser = argparse.ArgumentParser(description=desc)
 	parser.add_argument("filename")
-	parser.add_argument("-v", "--verbose", help="Increase Output Verbosity (once for printing lines as they are read, twice for registers as well)", action="count")
+	parser.add_argument("-v", "--verbose", help="Increase Output Verbosity (Practical Maximum 3 times)", action="count")
 	args = parser.parse_args()
 
 	labelName = ""
@@ -362,7 +374,7 @@ def main():
 					if args.verbose >= 1:
 						print( line )
 						if args.verbose >= 2:
-							print_regs()
+							print_regs(args.verbose)
 			else:
 				if line == labelName:
 					labelName = ""

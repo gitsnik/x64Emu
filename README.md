@@ -1,7 +1,7 @@
 x64Emu
 ======
 
-x64 Intel Nasm Syntax Emulator
+x64 Intel Nasm Syntax Emulator ( http://dracyrys.com/x64Emu )
 
 -- With a significant nod to the LibEMU project and the fantastic work they have done.
 
@@ -49,3 +49,11 @@ multi argument calls.
 Piping your output through this seems to work.
 
 perl -pe 's/scas rax.(.).*/scas$1/g;' | tr '[:upper:]' '[:lower:]'
+
+Known Bugs
+==========
+
+Moving large numbers directly into 64bit registers (that is, anything larger than  0x7fffffffffffffff) will cause python to complain of a value error:
+
+ValueError: invalid literal for int() with base 16: '0x950b11acaaaaff02L'
+
