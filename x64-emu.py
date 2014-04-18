@@ -36,6 +36,8 @@ flags = {
 	'zf': hex(0x01),
 }
 
+optimize = 0
+
 version = 'ALPHA RELEASE v0.02'
 webpage = 'http://dracyrys.com/x64Emu'
 
@@ -62,6 +64,8 @@ syscalls = {
 	'0x3c': ['exit()', 'rax'],
 	'0x1': ['write()', '0x01'],
 	'0x2a': ['connect()', '0x00'],
+	'0x71': ['setreuid()', '0x00'],
+	'0x72': ['setregid()', '0x00'],
 }
 
 stack = []
@@ -86,7 +90,7 @@ def normalise( line ):
 		retLine += ' ' + records[x]
 		x += 1
 
-	return retLine
+	return retLine.lower()
 
 '''
 	Helper Function: is_hex
@@ -119,8 +123,13 @@ def set_flag( flag, flagValue ):
 def set_register( register, regValue ):
 	global regs
 
+	prevreg = hex(int(regs[register], 16))
+	numericValue = 0
+
 	if regValue in regs:
 		regValue = regs[regValue]
+	else:
+		numericValue = 1
 
 	if not is_hex( regValue ):
 		regValue = hex( regValue )
@@ -178,6 +187,9 @@ def set_register( register, regValue ):
 
 		regs[full_register] = new_value
 
+		if optimize > 0 and numericValue == 1 and decimalValue < 65536:
+			print("[OPTIMIZER] Register %s Value less than half, nulls will be in output code" % register)
+
 	elif register[:1] == 'r' and register[-1:] == 'x':
 		full_register = register
 
@@ -187,6 +199,9 @@ def set_register( register, regValue ):
 		reg64bitValue = new_value
 
 		regs[full_register] = new_value
+
+		if optimize > 0 and numericValue == 1 and decimalValue < 4294967296:
+			print("[OPTIMIZER] Register %s Value less than half, nulls will be in output code" % register)
 
 	elif register[-1:] == 'x':
 		full_register = "r%sx" % register[:1]
@@ -201,7 +216,9 @@ def set_register( register, regValue ):
 
 	else:
 		regs[register] = regValue
-
+		if optimize > 0:
+			if regs[register] == prevreg:
+				print("Following command Useless. Register Unchanged (%s) (%s)" % (regs[register], prevreg))
 	'''
 		We have now generated "new" 64 bit values for the r*x register, we need to
 		update those appropriately for e*x, *x, *h, and *l.
@@ -217,13 +234,19 @@ def set_register( register, regValue ):
 		regs[regHigh] = hex(int(str(reg64bitValue[-16:-8]), 2))
 		regs[regLow] = hex(int(str(reg64bitValue[-8:]), 2))
 
+		if optimize > 0:
+			if regs[register] == prevreg:
+				print("Command Useless. Register Unchanged (%s) (%s)" % (regs[register], prevreg))
+
 
 def push_stack( stackValue ):
 	global stack
 	stack.append( stackValue )
+	command("add rsp, 0xffff")
 
 def pop_stack():
 	global stack
+	command("sub rsp, 0xffff")
 	return stack.pop()
 
 '''
@@ -240,6 +263,8 @@ def command( line ):
 	if line[-1:] == ":":
 		return False
 
+	global optimize
+
 	line = normalise( line )
 
 	commands = line.split()
@@ -248,11 +273,7 @@ def command( line ):
 		register = commands[1].replace(',', '')
 
 	if commands[0] == 'mov':
-		if is_hex( commands[2] ):
-			set_register( register, commands[2] )
-		else:
-			movVal = regs[commands[2]]
-			set_register( register, movVal )
+		set_register( register, commands[2] )
 	elif commands[0] == 'scasq':
 		# Assume the string scanned correctly.
 		set_flag( 'zf', 1 )
@@ -267,7 +288,12 @@ def command( line ):
 
 		xorValue = str(curValue ^ newValue)
 
-		set_register( register, xorValue )
+		if optimize > 0:
+			optimize = 0
+			set_register( register, xorValue )
+			optimize = 1
+		else:
+			set_register( register, xorValue )
 	elif commands[0] == 'sub':
 		newValue = hex( int(regs[register], 16) - int(commands[2], 16))
 		set_register( register, newValue )
@@ -280,6 +306,10 @@ def command( line ):
 	elif commands[0] == 'inc':
 		newValue = hex(int(regs[register], 16) + 1)
 		set_register( register, newValue )
+	elif commands[0] == 'lea':
+		# Fake up an address to load.
+		newValue = hex( int( "0x1234567890", 16 ) )
+		set_register( register, newValue )
 	elif commands[0] == 'push':
 		if register == 'byte':
 			push_stack( commands[2] )
@@ -290,14 +320,24 @@ def command( line ):
 			push_stack( pushValue )
 	elif commands[0] == 'pop':
 		stackVal = pop_stack()
-		set_register( register, stackVal )
+		if optimize > 0:
+			optimize = 0
+			set_register( register, stackVal )
+			optimize = 1
+		else:
+			set_register( register, stackVal )
 	elif commands[0] == 'mul':
 		# mul rax by register, return result into rax
 		curValue = int(regs['rax'], 16)
 		newValue = int(regs[register], 16)
 		mulValue = str(curValue * newValue)
 
-		set_register( 'rax', mulValue )
+		if optimize > 0:
+			optimize = 0
+			set_register( 'rax', mulValue )
+			optimize = 1
+		else:
+			set_register( 'rax', mulValue )
 
 		if int(regs['rax'], 16) == hex(0x00):
 			set_flag( 'zf', 1 )
@@ -310,7 +350,12 @@ def command( line ):
 	elif commands[0] == 'syscall':
 		if str(regs['rax']) in syscalls:
 			print("[+] %s : success rax = %s" % (syscalls[str(regs['rax'])][0], str(syscalls[regs['rax']][1])))
-			set_register( "rax", syscalls[regs['rax']][1] )
+			if optimize > 0:
+				optimize = 0
+				set_register( "rax", syscalls[regs['rax']][1] )
+				optimize = 1
+			else:
+				set_register( "rax", syscalls[regs['rax']][1] )
 			if regs['rax'] == '0x0':
 				set_flag( 'zf', 1 )
 			else:
@@ -323,7 +368,7 @@ def command( line ):
 		# Basically we're going to "trust" that it is used properly in shellcode, so we just use it
 		# as a null instruction for RDX.
 		set_register( "rdx", "0" )
-	elif commands[0] == 'bits' or commands[0] == 'global' or commands[0] == 'section':
+	elif commands[0] == 'bits' or commands[0] == 'global' or commands[0] == 'section' or commands[0] == '[section':
 		return 0
 	elif commands[0] == 'jz' or commands[0] == 'je':
 		if flags['zf'] == 1:
@@ -355,9 +400,15 @@ def main():
 	parser = argparse.ArgumentParser(description=desc)
 	parser.add_argument("filename")
 	parser.add_argument("-v", "--verbose", help="Increase Output Verbosity (Practical Maximum 3 times)", action="count")
+	parser.add_argument("-o", "--optimize", help="Display simple optimization tips. Not perfect, still helpful", action="count")
 	args = parser.parse_args()
 
 	labelName = ""
+
+	global optimize
+	if args.optimize:
+		optimize = 1
+
 	with open( args.filename ) as f:
 		for line in f:
 			line = line.split(";", 1)[0]
