@@ -17,30 +17,31 @@ will return the value in rsi as an example).
 Usage
 =====
 
-usage: analysis.py [-h] [-v] filename
+```
+usage: x64-emu.py [-h] [-v] [-o] filename
 
-x86_64 Simple Shellcode Analysis Program [ALPHA RELEASE v0.01]
+x86_64 Simple Shellcode Analysis Program [ALPHA RELEASE v0.02]
+http://dracyrys.com/x64Emu
 
 positional arguments:
 
   filename
 
 optional arguments:
-
-  -h, --help     show this help message and exit
-
-  -v, --verbose  Increase Output Verbosity (once for printing lines as they
-                 are read, twice for registers as well)
+  -h, --help      show this help message and exit
+  -v, --verbose   Increase Output Verbosity (Practical Maximum 3 times)
+  -o, --optimize  Display simple optimization tips. Not perfect, still helpful
+```
 
 This works with Intel Nasm syntax, and it sort of relies on having the original
 source code. You can do the following to make a mostly readable, mostly automatic
 dump of any shellcode you encounter.
 
+```
 objdump -M intel -D shellcode | \
-
 tr '\t' ' ' | \
-
 perl -pe 's/.[^:]*:( [a-f0-9]{2})+//g; s/(^ +|>)//g; s/ +/ /g; s/^[0-9a-f]+ <//g; s/(j?e) [0-9a-f]+ </$1 /g'
+```
 
 Notice that is one big processing line. The only other thing you will need to do
 is, probably manually, clean up any scas lines as the syscall "interpreter" doesn't really understand
@@ -48,7 +49,20 @@ multi argument calls.
 
 Piping your output through this seems to work.
 
+```perl
 perl -pe 's/scas rax.(.).*/scas$1/g;' | tr '[:upper:]' '[:lower:]'
+```
+
+Optimisation
+============
+
+The optimisation routine works for simple checks. If a register is already null, making it null again is
+generally a useless gesture. There are some commands that will not trigger the optimisation routine (xor
+for example) because the majority of the time this is not a mistaken command to create nulls with.
+
+Optimisation will also check for null statement commands - mov rax, 0x59 for example will generate a full
+64bit pad of nulls before 59 so the system reports this to you. Future releases may even process a suggested
+code exchange for you.
 
 Known Bugs
 ==========
